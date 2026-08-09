@@ -136,3 +136,77 @@ test("doGenerate reports error finish reason when cancelled", async () => {
   const result = await resultPromise
   assert.equal(result.finishReason.unified, "error")
 })
+
+const readTools = [
+  {
+    type: "function",
+    name: "read",
+    description: "Read a file.",
+    inputSchema: { type: "object", properties: { filePath: { type: "string" } } },
+  },
+]
+
+test("conversation mode continues the same chat with a delta", async () => {
+  const lm = provider.languageModel("human-relay")
+  const base = { tools: readTools, toolChoice: { type: "auto" } }
+
+  const s1 = await lm.doStream({
+    prompt: [{ role: "user", content: [{ type: "text", text: "Read the file" }] }],
+    ...base,
+  })
+  await delay(30)
+  const p1 = relayManager.list()
+  assert.equal(p1.length, 1)
+  assert.ok(p1[0]!.prompt.includes("# Available tools"), "first relay sends the full prompt")
+  assert.equal(p1[0]!.isContinuation, false)
+  const id1 = p1[0]!.id
+  relayManager.resolve(id1, '<opencode:tool name="read">{"filePath":"a.ts"}</opencode:tool>')
+  await readAll(s1.stream)
+
+  const history = [
+    { role: "user", content: [{ type: "text", text: "Read the file" }] },
+    { role: "assistant", content: [{ type: "tool-call", toolCallId: "c1", toolName: "read", input: '{"filePath":"a.ts"}' }] },
+    { role: "tool", content: [{ type: "tool-result", toolCallId: "c1", toolName: "read", output: { type: "text", value: "export const x = 1" } }] },
+  ]
+  const s2 = await lm.doStream({ prompt: history, ...base })
+  await delay(30)
+  const p2 = relayManager.list()
+  const p2Relay = p2[p2.length - 1]!
+  assert.equal(p2Relay.isContinuation, true, "same chat is continued")
+  assert.ok(p2Relay.prompt.includes("### Continuation"))
+  assert.ok(p2Relay.prompt.includes("export const x = 1"), "delta carries the new tool result")
+  assert.ok(!p2Relay.prompt.includes("# Available tools"), "static block not re-sent")
+  assert.ok(!p2Relay.prompt.includes("Read the file"), "old user message not re-sent")
+  relayManager.resolve(p2Relay.id, "Done!")
+  await readAll(s2.stream)
+})
+
+test("a broken tool block flags the conversation for a format reminder", async () => {
+  const lm = provider.languageModel("human-relay")
+  const base = { tools: readTools, toolChoice: { type: "auto" } }
+
+  const s1 = await lm.doStream({
+    prompt: [{ role: "user", content: [{ type: "text", text: "Use a tool" }] }],
+    ...base,
+  })
+  await delay(30)
+  const p1 = relayManager.list()
+  const id1 = p1[p1.length - 1]!.id
+  // Structurally broken block: opener present, closing tag missing.
+  relayManager.resolve(id1, 'Let me call the tool:\n<opencode:tool name="read">{"filePath":"a.ts"')
+  await readAll(s1.stream)
+
+  const history = [
+    { role: "user", content: [{ type: "text", text: "Use a tool" }] },
+    { role: "assistant", content: [{ type: "text", text: 'Let me call the tool:\n<opencode:tool name="read">{"filePath":"a.ts"' }] },
+    { role: "tool", content: [{ type: "tool-result", toolCallId: "c1", toolName: "read", output: { type: "text", value: "x" } }] },
+  ]
+  const s2 = await lm.doStream({ prompt: history, ...base })
+  await delay(30)
+  const p2 = relayManager.list()
+  const p2Relay = p2[p2.length - 1]!
+  assert.equal(p2Relay.isContinuation, true)
+  assert.ok(p2Relay.prompt.includes("# Format reminder"), "next relay carries a format reminder")
+  relayManager.resolve(p2Relay.id, "ok")
+  await readAll(s2.stream)
+})

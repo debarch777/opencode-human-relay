@@ -3,12 +3,15 @@ import type { HumanRelayOptions, ResolvedConfig } from "./config.js"
 import { resolveConfig } from "./config.js"
 import { HumanRelayModel } from "./model.js"
 
-export type { HumanRelayOptions, RelayMode, RelaySettings, ResolvedConfig } from "./config.js"
+export type { HumanRelayOptions, RelayMode, RelayPromptMode, RelaySettings, ResolvedConfig } from "./config.js"
 export { resolveConfig } from "./config.js"
 export { HumanRelayModel, zeroUsage, chunkText } from "./model.js"
-export { renderPrompt, buildBanner } from "./prompt.js"
+export { renderPrompt, renderRelayPrompt, buildBanner } from "./prompt.js"
+export type { RelayConversationState, RelayRenderResult, RenderedPrompt } from "./prompt.js"
+export { conversationFingerprint, conversationToolFingerprint } from "./prompt.js"
 export { parseToolCalls, extractJSONObject, stripCodeFence } from "./parse.js"
 export { RelayManager } from "./relay.js"
+export type { RelayCreateInput, PendingRelayInfo } from "./relay.js"
 export { ensureBridge, readStateFile } from "./bridge.js"
 
 export interface HumanRelayProvider {

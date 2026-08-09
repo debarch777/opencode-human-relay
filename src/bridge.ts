@@ -1,10 +1,13 @@
-import { createHash, randomBytes } from "node:crypto"
+import { randomBytes } from "node:crypto"
 import { mkdirSync, writeFileSync, readFileSync, chmodSync, renameSync } from "node:fs"
 import path from "node:path"
 import http from "node:http"
 import type { AddressInfo } from "node:net"
 import type { RelaySettings } from "./config.js"
 import type { RelayManager } from "./relay.js"
+import { sha1 } from "./util.js"
+
+export { sha1 }
 
 export interface BridgeInfo {
   port: number
@@ -152,7 +155,17 @@ async function handle(
   // GET /relay/current
   if (req.method === "GET" && url.pathname === "/relay/current") {
     const relay = manager.oldest
-    json(res, 200, { relay: relay ? { id: relay.id, prompt: relay.prompt, createdAt: relay.createdAt } : null })
+    json(res, 200, {
+      relay: relay
+        ? {
+            id: relay.id,
+            prompt: relay.prompt,
+            fingerprint: relay.fingerprint,
+            isContinuation: relay.isContinuation,
+            createdAt: relay.createdAt,
+          }
+        : null,
+    })
     return
   }
 
@@ -266,9 +279,4 @@ export function readStateFile(stateDir: string): BridgeInfo | undefined {
   } catch {
     return undefined
   }
-}
-
-/** Hash helper for stable ids. */
-export function sha1(value: string): string {
-  return createHash("sha1").update(value).digest("hex")
 }

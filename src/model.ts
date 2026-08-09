@@ -6,10 +6,11 @@ import type {
   LanguageModelV3StreamPart,
   LanguageModelV3StreamResult,
 } from "@ai-sdk/provider"
-import type { RelayMode, ResolvedConfig } from "./config.js"
-import { buildBanner, renderPrompt } from "./prompt.js"
+import type { RelayMode, RelayPromptMode, ResolvedConfig } from "./config.js"
+import { buildBanner, renderRelayPrompt } from "./prompt.js"
+import type { ParsedToolCall } from "./parse.js"
 import { parseToolCalls } from "./parse.js"
-import { writeClipboard } from "./util.js"
+import { sha1, writeClipboard } from "./util.js"
 import { ensureClipboardWatcher, relayManager, startRelayBridge } from "./state.js"
 
 const TOOL_BLOCK_REMOVE_RE = /<opencode:tool[\s\S]*?<\/opencode:tool>/gi
@@ -60,32 +61,80 @@ export class HumanRelayModel implements LanguageModelV3 {
     this.modelId = config.modelId
   }
 
-  private perCallOptions(options: LanguageModelV3CallOptions): { mode: RelayMode; autoCopy: boolean } {
+  private perCallOptions(options: LanguageModelV3CallOptions): {
+    mode: RelayMode
+    autoCopy: boolean
+    promptMode: RelayPromptMode
+  } {
     const po = providerOptions(options, this.config.name)
     const relayCfg = this.config.relay
     const nested = po && typeof po.relay === "object" && po.relay !== null ? (po.relay as Record<string, unknown>) : undefined
     const overrideMode = po?.mode ?? nested?.mode
     const overrideAutoCopy = po && typeof po.autoCopy === "boolean" ? po.autoCopy : nested && typeof nested.autoCopy === "boolean" ? nested.autoCopy : undefined
+    const overridePromptMode = po?.promptMode ?? nested?.promptMode
     const mode: RelayMode =
       overrideMode === "clipboard" || overrideMode === "manual" ? overrideMode : relayCfg.mode
     const autoCopy = overrideAutoCopy === undefined ? relayCfg.autoCopy : overrideAutoCopy
-    return { mode, autoCopy }
+    const promptMode: RelayPromptMode =
+      overridePromptMode === "conversation" || overridePromptMode === "full"
+        ? overridePromptMode
+        : relayCfg.promptMode
+    return { mode, autoCopy, promptMode }
+  }
+
+  /** Create a relay for the given options, reusing an ongoing web chat when possible. */
+  private beginRelay(options: LanguageModelV3CallOptions): {
+    prompt: string
+    isContinuation: boolean
+    conversationId: string
+    relay: { id: string; promise: Promise<string> }
+  } {
+    const { mode, autoCopy, promptMode } = this.perCallOptions(options)
+    const rendered = renderRelayPrompt(options, this.config, relayManager.activeConversation, promptMode)
+    relayManager.rememberConversation(rendered.conversation)
+    const relay = relayManager.create({
+      prompt: rendered.prompt,
+      mode,
+      fingerprint: sha1(rendered.prompt),
+      conversationId: rendered.conversation.id,
+      isContinuation: rendered.isContinuation,
+    })
+
+    startRelayBridge(this.config.relay)
+    if (mode === "clipboard") {
+      if (autoCopy) void tryCopyPrompt(rendered.prompt)
+      ensureClipboardWatcher(this.config.relay.clipboardPollMs)
+    }
+    return {
+      prompt: rendered.prompt,
+      isContinuation: rendered.isContinuation,
+      conversationId: rendered.conversation.id,
+      relay,
+    }
+  }
+
+  /** After a reply, flag the conversation when a tool block failed to parse. */
+  private maybeMarkFormatFailure(
+    text: string,
+    calls: ParsedToolCall[],
+    options: LanguageModelV3CallOptions,
+    conversationId: string,
+  ): void {
+    const hasTools = (options.tools?.length ?? 0) > 0
+    const toolChoiceNone = options.toolChoice?.type === "none"
+    if (!hasTools || toolChoiceNone) return
+    if (calls.length > 0) return
+    if (!/<opencode:tool\b/i.test(text)) return
+    relayManager.markFormatFailure(conversationId)
   }
 
   async doGenerate(options: LanguageModelV3CallOptions): Promise<LanguageModelV3GenerateResult> {
-    const { prompt } = renderPrompt(options, this.config)
-    const { mode, autoCopy } = this.perCallOptions(options)
-
-    startRelayBridge(this.config.relay)
-    const relay = relayManager.create(prompt, mode)
-    if (mode === "clipboard") {
-      if (autoCopy) await tryCopyPrompt(prompt)
-      ensureClipboardWatcher(this.config.relay.clipboardPollMs)
-    }
+    const { prompt, conversationId, relay } = this.beginRelay(options)
 
     try {
       const text = await relay.promise
       const calls = parseToolCalls(text)
+      this.maybeMarkFormatFailure(text, calls, options, conversationId)
       const content: LanguageModelV3Content[] = []
       const cleanText = stripToolBlocks(text)
       if (cleanText) content.push({ type: "text", text: cleanText })
@@ -114,16 +163,13 @@ export class HumanRelayModel implements LanguageModelV3 {
   }
 
   async doStream(options: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> {
-    const { prompt } = renderPrompt(options, this.config)
-    const { mode, autoCopy } = this.perCallOptions(options)
+    const { prompt, isContinuation, conversationId, relay } = this.beginRelay(options)
+    const perCall = this.perCallOptions(options)
 
-    startRelayBridge(this.config.relay)
-    const relay = relayManager.create(prompt, mode)
-
-    const banner = this.config.relay.banner ? buildBanner(this.config, mode) : ""
+    const banner = this.config.relay.banner ? buildBanner(this.config, perCall.mode, isContinuation) : ""
     let clipboardNote = ""
-    if (mode === "clipboard") {
-      if (autoCopy) {
+    if (perCall.mode === "clipboard") {
+      if (perCall.autoCopy) {
         try {
           await writeClipboard(prompt)
           clipboardNote = ` — prompt copied to clipboard`
@@ -136,6 +182,9 @@ export class HumanRelayModel implements LanguageModelV3 {
     }
 
     const bannerText = `${banner}${clipboardNote}`
+
+    const markFormatFailure = (text: string, calls: ParsedToolCall[], opts: LanguageModelV3CallOptions, convId: string): void =>
+      this.maybeMarkFormatFailure(text, calls, opts, convId)
 
     const stream = new ReadableStream<LanguageModelV3StreamPart>({
       async start(controller) {
@@ -162,6 +211,7 @@ export class HumanRelayModel implements LanguageModelV3 {
             return
           }
           const calls = parseToolCalls(text)
+          markFormatFailure(text, calls, options, conversationId)
           const cleanText = stripToolBlocks(text)
 
           if (cleanText) {

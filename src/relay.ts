@@ -1,16 +1,31 @@
 import { randomUUID } from "node:crypto"
 import type { RelayMode } from "./config.js"
+import type { RelayConversationState } from "./prompt.js"
 import { readClipboard } from "./util.js"
 
 export interface PendingRelayInfo {
   id: string
   prompt: string
   mode: RelayMode
+  /** SHA-1 of the rendered prompt text. */
+  fingerprint: string
+  /** True when this relay is a delta for an ongoing web chat. */
+  isContinuation: boolean
   createdAt: number
+}
+
+export interface RelayCreateInput {
+  prompt: string
+  mode: RelayMode
+  fingerprint: string
+  /** The web-chat conversation this relay belongs to. */
+  conversationId: string
+  isContinuation: boolean
 }
 
 interface PendingEntry {
   info: PendingRelayInfo
+  conversationId: string
   resolve: (text: string) => void
   reject: (err: Error) => void
 }
@@ -24,9 +39,29 @@ export class RelayManager {
   private entries = new Map<string, PendingEntry>()
   private order: string[] = []
   private lastAccepted = ""
+  private conversations = new Map<string, RelayConversationState>()
+  private activeConversationId: string | undefined
 
   /** Create a new pending relay and return a promise that settles with the reply text. */
-  create(prompt: string, mode: RelayMode): { id: string; promise: Promise<string> } {
+  create(
+    prompt: string,
+    mode: RelayMode,
+  ): { id: string; promise: Promise<string> }
+  create(input: RelayCreateInput): { id: string; promise: Promise<string> }
+  create(
+    arg: string | RelayCreateInput,
+    maybeMode?: RelayMode,
+  ): { id: string; promise: Promise<string> } {
+    const input: RelayCreateInput =
+      typeof arg === "string"
+        ? {
+            prompt: arg,
+            mode: maybeMode ?? "manual",
+            fingerprint: "",
+            conversationId: randomUUID(),
+            isContinuation: false,
+          }
+        : arg
     const id = randomUUID()
     let resolve!: (text: string) => void
     let reject!: (err: Error) => void
@@ -35,12 +70,42 @@ export class RelayManager {
       reject = rej
     })
     this.entries.set(id, {
-      info: { id, prompt: prompt.trim(), mode, createdAt: Date.now() },
+      info: {
+        id,
+        prompt: input.prompt.trim(),
+        mode: input.mode,
+        fingerprint: input.fingerprint,
+        isContinuation: input.isContinuation,
+        createdAt: Date.now(),
+      },
+      conversationId: input.conversationId,
       resolve,
       reject,
     })
     this.order.push(id)
     return { id, promise }
+  }
+
+  /**
+   * Record the conversation state for the most recent relay so the next relay
+   * can detect a continuation. Only the last state is used for detection.
+   */
+  rememberConversation(state: RelayConversationState): void {
+    this.conversations.set(state.id, state)
+    this.activeConversationId = state.id
+  }
+
+  /** The conversation state of the most recent relay, if any. */
+  get activeConversation(): RelayConversationState | undefined {
+    return this.activeConversationId
+      ? this.conversations.get(this.activeConversationId)
+      : undefined
+  }
+
+  /** Flag a conversation so the next relay includes a format reminder. */
+  markFormatFailure(conversationId: string): void {
+    const state = this.conversations.get(conversationId)
+    if (state) state.needsFormatReminder = true
   }
 
   get count(): number {

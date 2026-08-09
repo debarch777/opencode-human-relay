@@ -1,6 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { RelayManager, isAcceptableReply } from "../src/relay.js"
+import type { RelayConversationState } from "../src/prompt.js"
 
 test("resolve oldest is FIFO", async () => {
   const m = new RelayManager()
@@ -86,4 +87,46 @@ test("the last accepted reply is not accepted twice", () => {
 
 test("empty content is never accepted", () => {
   assert.equal(isAcceptableReply("   ", ["prompt"], ""), false)
+})
+
+test("create accepts a full input object and records fingerprint/isContinuation", () => {
+  const m = new RelayManager()
+  const r = m.create({
+    prompt: "delta prompt",
+    mode: "manual",
+    fingerprint: "abc123",
+    conversationId: "conv-1",
+    isContinuation: true,
+  })
+  assert.equal(r.id.length > 0, true)
+  assert.equal(m.oldest?.fingerprint, "abc123")
+  assert.equal(m.oldest?.isContinuation, true)
+  assert.equal(m.oldest?.prompt, "delta prompt")
+})
+
+test("activeConversation and markFormatFailure track the latest conversation", () => {
+  const m = new RelayManager()
+  assert.equal(m.activeConversation, undefined)
+
+  const state: RelayConversationState = {
+    id: "conv-2",
+    toolFingerprint: "tf",
+    fingerprint: "fp",
+    staticBlock: "static",
+    history: ["m1"],
+    needsFormatReminder: false,
+  }
+  m.rememberConversation(state)
+  assert.equal(m.activeConversation?.id, "conv-2")
+
+  m.markFormatFailure("conv-2")
+  assert.equal(m.activeConversation?.needsFormatReminder, true)
+
+  const newer: RelayConversationState = { ...state, id: "conv-3", needsFormatReminder: false }
+  m.rememberConversation(newer)
+  assert.equal(m.activeConversation?.id, "conv-3")
+  assert.equal(m.activeConversation?.needsFormatReminder, false, "flags do not leak across conversations")
+
+  m.markFormatFailure("unknown-id")
+  assert.equal(m.activeConversation?.needsFormatReminder, false)
 })

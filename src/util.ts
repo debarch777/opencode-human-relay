@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process"
+import { createHash } from "node:crypto"
 import { promisify } from "node:util"
 
 const execFileP = promisify(execFile)
@@ -93,4 +94,9 @@ export function prettyJSON(value: unknown): string {
   } catch {
     return String(value)
   }
+}
+
+/** SHA-1 hex digest (used for stable fingerprints). */
+export function sha1(value: string): string {
+  return createHash("sha1").update(value).digest("hex")
 }

@@ -97,6 +97,19 @@ on the next start. You do not need to run `npm install` inside opencode.
 5. If the reply contains tool calls, opencode executes them and continues the
    loop — paste the next prompt the same way.
 
+### Conversation mode (default)
+
+In `conversation` mode (the default) the web chat itself is the conversation
+state. The first relay for a new task pastes the full prompt — instructions,
+tools, and history. Later relays for the same web chat paste only a small
+delta: the new tool results and user messages. Your web AI's own replies stay
+in the chat and are never re-pasted, so context grows slowly no matter how many
+steps opencode runs. Paste each delta into the **same** chat.
+
+If a reply contains a tool block that could not be parsed, the next relay appends
+a short format reminder — and only then. Set `relay.promptMode: "full"` to go
+back to re-pasting the entire prompt on every relay.
+
 ### CLI
 
 ```
@@ -138,18 +151,21 @@ reply. Run: opencode-human-relay paste`. Fetch the prompt with
 | `autoCopy`         | `true`     | Copy the prompt to the clipboard automatically.                    |
 | `stateDir`         | OS data dir| Where the bridge state file lives (the CLI reads it).              |
 | `instruction`      | built-in   | Extra instructions injected into every prompt.                     |
+| `promptMode`       | `conversation`| `conversation` sends the instructions+tools once per web chat and then only deltas; `full` re-sends everything on every relay. |
 | `banner`           | `true`     | Emit a short `[human-relay]` waiting banner as assistant text.     |
 | `bannerMarker`     | `[human-relay]`| Marker stripped from assistant history when re-prompting.      |
 
 ### Environment variables
 
 Same keys, uppercased and prefixed, taking priority over `opencode.json`:
-`HUMAN_RELAY_MODE`, `HUMAN_RELAY_PORT`, `HUMAN_RELAY_CLIPBOARD_POLL_MS`,
-`HUMAN_RELAY_STATE_DIR`, `HUMAN_RELAY_AUTO_COPY`.
+`HUMAN_RELAY_MODE`, `HUMAN_RELAY_PROMPT_MODE`, `HUMAN_RELAY_PORT`,
+`HUMAN_RELAY_CLIPBOARD_POLL_MS`, `HUMAN_RELAY_STATE_DIR`,
+`HUMAN_RELAY_AUTO_COPY`.
 
 ### Per-request overrides
 
-You can override mode/autocopy per call through AI SDK provider options:
+You can override mode/autocopy/prompt mode per call through AI SDK provider
+options:
 
 ```ts
 providerOptions: {
@@ -157,16 +173,22 @@ providerOptions: {
 }
 ```
 
+Nested `relay` overrides work too:
+
+```ts
+providerOptions: {
+  "opencode-human-relay": { relay: { mode: "manual", promptMode: "full" } },
+}
+```
+
 ## How tool calls survive copy/paste
 
-Every prompt includes:
-
-- the full conversation history (roles labeled `User` / `Assistant` /
-  `Tool result`, with prior tool calls in the same XML format),
-- the available tools and their JSON parameter schemas,
-
-and instructs the web model to emit a single, unambiguous block when a tool is
-needed:
+In `full` mode every prompt includes the full conversation history (roles
+labeled `User` / `Assistant` / `Tool result`, with prior tool calls in the same
+XML format) plus the available tools and their JSON parameter schemas. In
+`conversation` mode that block is pasted once and later relays only add new
+tool results / user messages. Either way, the web model is instructed to emit a
+single, unambiguous block when a tool is needed:
 
 ```xml
 <opencode:tool name="read">
@@ -181,9 +203,11 @@ so the agent can recover instead of crashing.
 ## Architecture
 
 - `src/model.ts` — `LanguageModelV3` implementation (`doStream` / `doGenerate`).
-- `src/prompt.ts` — renders prompts + tool schemas to plain text.
+- `src/prompt.ts` — renders prompts + tool schemas to plain text; conversation
+  tracking (full prompt once, then deltas) with fingerprint helpers.
 - `src/parse.ts` — parses `<opencode:tool>` blocks from replies.
-- `src/relay.ts` — pending-request manager (FIFO) + clipboard watcher.
+- `src/relay.ts` — pending-request manager (FIFO) + clipboard watcher +
+  conversation state.
 - `src/bridge.ts` — loopback HTTP server exposing the relay to the CLI.
 - `src/cli.ts` — `opencode-human-relay` CLI.
 - `src/state.ts` — process-wide singletons.
@@ -203,6 +227,8 @@ over the network by this package — you copy/paste manually.
 
 - Copy/paste is manual: throughput is bounded by how fast you can paste.
 - Long or multi-step agent sessions involve several copy/paste round trips.
+  In `conversation` mode each subsequent paste is a short delta that must go
+  into the **same** web chat.
 - File attachments are represented as placeholders — the web model can't see
   local file bytes, but it can read them through the `read` tool.
 - The web model must follow the tool-block format for tool calls to work; very

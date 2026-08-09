@@ -12,6 +12,18 @@ import path from "node:path"
  */
 export type RelayMode = "clipboard" | "manual"
 
+/**
+ * How much of the conversation is re-sent on each relay.
+ *
+ * - `conversation`: the instruction + tools block is sent once when a new web
+ *   chat starts; later relays for the same chat send only the new tool results
+ *   and user messages (the web AI's own replies stay in the chat). A format
+ *   reminder is appended only when a previous reply failed to parse.
+ * - `full`: every relay re-sends the instruction + tools + entire history
+ *   (the original behavior).
+ */
+export type RelayPromptMode = "conversation" | "full"
+
 /** `createHumanRelay` options, mirroring what opencode passes into provider factories. */
 export interface HumanRelayOptions {
   /** opencode passes `name` = provider id, e.g. `"human-relay"`. */
@@ -30,6 +42,11 @@ export interface HumanRelayOptions {
     stateDir?: string
     /** Extra instructions injected into every prompt. */
     instruction?: string
+    /**
+     * How much of the conversation is re-sent per relay.
+     * Defaults to `conversation`.
+     */
+    promptMode?: RelayPromptMode
     /** Whether to emit a short "[human-relay] waiting..." banner as assistant text. Defaults to true. */
     banner?: boolean
     /** Markers stripped from assistant text when rendering history. */
@@ -52,6 +69,7 @@ export interface RelaySettings {
   autoCopy: boolean
   stateDir: string
   instruction: string
+  promptMode: RelayPromptMode
   banner: boolean
   bannerMarker: string
 }
@@ -113,6 +131,7 @@ function num(value: unknown, fallback: number, min: number): number {
  *
  * Environment variables:
  * - `HUMAN_RELAY_MODE`            -> `clipboard` | `manual`
+ * - `HUMAN_RELAY_PROMPT_MODE`     -> `conversation` | `full`
  * - `HUMAN_RELAY_PORT`            -> bridge port
  * - `HUMAN_RELAY_CLIPBOARD_POLL_MS`
  * - `HUMAN_RELAY_STATE_DIR`
@@ -146,6 +165,13 @@ export function resolveConfig(input: unknown, env: NodeJS.ProcessEnv = process.e
   const banner = relay.banner !== false
   const bannerMarker = str(relay.bannerMarker) ?? DEFAULT_BANNER_MARKER
 
+  const envPromptMode = str(env.HUMAN_RELAY_PROMPT_MODE)
+  const promptMode: RelayPromptMode =
+    (envPromptMode === "conversation" || envPromptMode === "full" ? envPromptMode : undefined) ??
+    (relay.promptMode === "conversation" || relay.promptMode === "full"
+      ? relay.promptMode
+      : "conversation")
+
   const relaySettings: RelaySettings = {
     mode,
     port,
@@ -153,6 +179,7 @@ export function resolveConfig(input: unknown, env: NodeJS.ProcessEnv = process.e
     autoCopy,
     stateDir,
     instruction,
+    promptMode,
     banner,
     bannerMarker,
   }

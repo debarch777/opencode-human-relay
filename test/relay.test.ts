@@ -85,6 +85,14 @@ test("the last accepted reply is not accepted twice", () => {
   assert.equal(isAcceptableReply("hello", ["prompt"], "hello"), false)
 })
 
+test("a fresh identical copy is accepted (repeated short answers like hi)", () => {
+  assert.equal(isAcceptableReply("hi", ["prompt"], "hi", false), true)
+})
+
+test("a stale identical reply is rejected while the clipboard is unchanged", () => {
+  assert.equal(isAcceptableReply("hi", ["prompt"], "hi", true), false)
+})
+
 test("empty content is never accepted", () => {
   assert.equal(isAcceptableReply("   ", ["prompt"], ""), false)
 })

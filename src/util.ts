@@ -59,22 +59,30 @@ export async function writeClipboard(text: string): Promise<void> {
   if (!cmd) throw new Error("no clipboard tool found (install wl-clipboard/xclip/xsel)")
 
   await new Promise<void>((resolve, reject) => {
+    // `wl-copy`/`xsel` fork a daemon that keeps the selection alive and inherits
+    // the child's stdio fds, so the `close` event never fires. Settle on `exit`
+    // instead and keep stderr off a pipe so the daemon can't pin the event loop.
     const child = spawn(cmd.write[0], cmd.write.slice(1), {
-      stdio: ["pipe", "ignore", "pipe"],
+      stdio: ["pipe", "ignore", "ignore"],
       windowsHide: true,
     })
+    let settled = false
     const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
       child.kill()
       reject(new Error("clipboard write timed out"))
     }, 5000)
-    child.on("error", (err) => {
+    const settle = (err: Error | null): void => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
-      reject(err)
-    })
-    child.on("close", (code) => {
-      clearTimeout(timer)
-      if (code === 0) resolve()
-      else reject(new Error(`clipboard write exited with code ${code}`))
+      if (err) reject(err)
+      else resolve()
+    }
+    child.on("error", (err) => settle(err))
+    child.on("exit", (code) => {
+      settle(code === 0 ? null : new Error(`clipboard write exited with code ${code}`))
     })
     child.stdin.write(text)
     child.stdin.end()

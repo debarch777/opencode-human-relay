@@ -177,19 +177,22 @@ export class RelayManager {
 /**
  * Decide whether clipboard content should be treated as a reply. Normalizes
  * whitespace so a prompt ending in a newline can never be mistaken for its own
- * reply (or vice versa).
+ * reply (or vice versa). A reply equal to the last accepted one is rejected
+ * when the clipboard is unchanged (stale), but accepted when it is a fresh copy
+ * — short repeated answers such as "hi" must keep working.
  */
 export function isAcceptableReply(
   text: string,
   pendingPrompts: Iterable<string>,
   lastAccepted: string,
+  clipboardUnchanged = true,
 ): boolean {
   const trimmed = text.trim()
   if (trimmed.length === 0) return false
-  if (trimmed === lastAccepted) return false
   for (const prompt of pendingPrompts) {
     if (trimmed === prompt.trim()) return false
   }
+  if (trimmed === lastAccepted) return !clipboardUnchanged
   return true
 }
 
@@ -206,13 +209,16 @@ export function startClipboardWatcher(
 ): () => void {
   let stopped = false
   let timer: ReturnType<typeof setTimeout> | undefined
+  let lastRead = ""
 
   const loop = async (): Promise<void> => {
     if (stopped) return
     if (manager.count > 0) {
       try {
         const text = await readClipboard()
-        if (isAcceptableReply(text, manager.list().map((p) => p.prompt), manager.lastAcceptedContent)) {
+        const changed = text !== lastRead
+        lastRead = text
+        if (isAcceptableReply(text, manager.list().map((p) => p.prompt), manager.lastAcceptedContent, !changed)) {
           const id = manager.resolveOldest(text)
           if (id !== undefined) manager.lastAcceptedContent = text.trim()
         }

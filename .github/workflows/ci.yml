@@ -37,6 +37,11 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm run build
-      - run: npm publish --provenance --access public
+      - name: Publish to npm
+        if: ${{ secrets.NPM_TOKEN != '' }}
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publishing is skipped — add an NPM_TOKEN secret
+        if: ${{ secrets.NPM_TOKEN == '' }}
+        run: echo "No NPM_TOKEN secret set — skipping npm publish. Add one in Settings > Secrets > Actions to auto-publish on tagged releases."

@@ -7,7 +7,7 @@ import type {
   LanguageModelV3StreamResult,
 } from "@ai-sdk/provider"
 import type { RelayMode, RelayPromptMode, ResolvedConfig } from "./config.js"
-import { buildBanner, renderRelayPrompt } from "./prompt.js"
+import { buildBanner, isTitleRequest, renderRelayPrompt, synthesizedTitle } from "./prompt.js"
 import type { ParsedToolCall } from "./parse.js"
 import { parseToolCalls } from "./parse.js"
 import { sha1, writeClipboard } from "./util.js"
@@ -129,6 +129,14 @@ export class HumanRelayModel implements LanguageModelV3 {
   }
 
   async doGenerate(options: LanguageModelV3CallOptions): Promise<LanguageModelV3GenerateResult> {
+    if (isTitleRequest(options)) {
+      return {
+        content: [{ type: "text", text: synthesizedTitle(options) }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: zeroUsage(),
+        warnings: [],
+      }
+    }
     const { prompt, conversationId, relay } = this.beginRelay(options)
 
     try {
@@ -163,6 +171,28 @@ export class HumanRelayModel implements LanguageModelV3 {
   }
 
   async doStream(options: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> {
+    if (isTitleRequest(options)) {
+      const text = synthesizedTitle(options)
+      return {
+        stream: new ReadableStream<LanguageModelV3StreamPart>({
+          async start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] })
+            const id = "relay-title"
+            controller.enqueue({ type: "text-start", id })
+            for (const delta of chunkText(text)) {
+              controller.enqueue({ type: "text-delta", id, delta })
+            }
+            controller.enqueue({ type: "text-end", id })
+            controller.enqueue({
+              type: "finish",
+              usage: zeroUsage(),
+              finishReason: { unified: "stop", raw: undefined },
+            })
+            controller.close()
+          },
+        }),
+      }
+    }
     const { prompt, isContinuation, conversationId, relay } = this.beginRelay(options)
     const perCall = this.perCallOptions(options)
 

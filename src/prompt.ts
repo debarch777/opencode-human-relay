@@ -153,6 +153,47 @@ export interface RenderedPrompt {
   messageCount: number
 }
 
+/** The raw text of the first user message (handles string and part-array content). */
+export function firstUserText(options: LanguageModelV3CallOptions): string {
+  const messages = options.prompt ?? []
+  for (const message of messages) {
+    if (message.role !== "user") continue
+    const content = message.content
+    if (typeof content === "string") return content
+    if (Array.isArray(content)) {
+      const text = content
+        .filter((part) => part.type === "text")
+        .map((part) => (part as { text?: string }).text ?? "")
+        .join("")
+      if (text) return text
+    }
+  }
+  return ""
+}
+
+/**
+ * Whether this call is opencode's background session-title generation rather
+ * than a real task. Title calls must not be relayed: they run in parallel with
+ * the real task, so relaying them lets the user's reply be consumed as a
+ * session title while the actual prompt starves.
+ */
+export function isTitleRequest(options: LanguageModelV3CallOptions): boolean {
+  return /^Generate a (?:title for this conversation|short 2-3 word name that describes this task):?\s*(\n|$)/i.test(
+    firstUserText(options).trim(),
+  )
+}
+
+/** A short placeholder title derived from the title request's payload. */
+export function synthesizedTitle(options: LanguageModelV3CallOptions): string {
+  const lines = firstUserText(options)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const body = lines.slice(1).join(" ")
+  const words = body ? body.split(/\s+/).slice(0, 4).join(" ") : ""
+  return words || "New session"
+}
+
 /**
  * Render a `LanguageModelV3CallOptions` into a single text prompt suitable for
  * pasting into a web AI (ChatGPT, Claude, Gemini, ...). This is the `full`

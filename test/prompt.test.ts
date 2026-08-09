@@ -9,6 +9,8 @@ import {
   buildBanner,
   conversationFingerprint,
   conversationToolFingerprint,
+  isTitleRequest,
+  synthesizedTitle,
 } from "../src/prompt.js"
 import type { RelayConversationState } from "../src/prompt.js"
 
@@ -195,4 +197,23 @@ test("conversation fingerprints are stable and distinct", () => {
   const different = [...tools, { type: "function", name: "write", inputSchema: { type: "object" } } as LanguageModelV3FunctionTool]
   assert.notEqual(conversationToolFingerprint(tools), conversationToolFingerprint(different))
   assert.equal(conversationToolFingerprint(tools), conversationToolFingerprint([...tools].reverse()))
+})
+
+test("isTitleRequest detects opencode's title-generation calls only", () => {
+  const title = { prompt: [{ role: "user", content: [{ type: "text", text: "Generate a title for this conversation:\n" }] }] }
+  assert.equal(isTitleRequest(title as LanguageModelV3CallOptions), true)
+
+  const taskName = { prompt: [{ role: "user", content: "Generate a short 2-3 word name that describes this task:\n\nfix the bug" }] }
+  assert.equal(isTitleRequest(taskName as LanguageModelV3CallOptions), true)
+
+  assert.equal(isTitleRequest(opts()), false, "a real task prompt is not a title request")
+  assert.equal(isTitleRequest({ prompt: [{ role: "user", content: "hi" }] } as LanguageModelV3CallOptions), false)
+  assert.equal(isTitleRequest({ prompt: [{ role: "user", content: "Generate a title for this conversation: my code" }] } as LanguageModelV3CallOptions), false)
+})
+
+test("synthesizedTitle derives a short placeholder from the title payload", () => {
+  const title = { prompt: [{ role: "user", content: "Generate a title for this conversation:\n\nhello there" }] } as LanguageModelV3CallOptions
+  assert.equal(synthesizedTitle(title), "hello there")
+  assert.equal(synthesizedTitle({ prompt: [{ role: "user", content: "Generate a title for this conversation:\n" }] } as LanguageModelV3CallOptions), "New session")
+  assert.equal(synthesizedTitle({ prompt: [{ role: "user", content: "Generate a short 2-3 word name that describes this task:\n\nwrite tests" }] } as LanguageModelV3CallOptions), "write tests")
 })

@@ -1,6 +1,7 @@
 # opencode-human-relay
 
-[![npm version](https://img.shields.io/npm/v/opencode-human-relay?logo=npm)](https://www.npmjs.com/package/opencode-human-relay)
+[![GitHub release](https://img.shields.io/github/v/release/debarch777/opencode-human-relay?logo=github)](https://github.com/debarch777/opencode-human-relay/releases)
+[![GitHub stars](https://img.shields.io/github/stars/debarch777/opencode-human-relay?logo=github)](https://github.com/debarch777/opencode-human-relay/stargazers)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![CI](https://img.shields.io/github/actions/workflow/status/debarch777/opencode-human-relay/ci.yml?branch=main&logo=github)](https://github.com/debarch777/opencode-human-relay/actions)
@@ -63,9 +64,13 @@ edit code, and use your MCP servers, exactly like a native API model.
 ## Install
 
 The provider installs itself through opencode — you don't manage anything
-inside opencode. Just register it in your config and opencode will auto-install
-the npm package on its next start. The global CLI is optional (you only need it
-for the manual `paste`/`get` flow; in clipboard mode copying the reply is enough).
+inside opencode. Just register it in your config and opencode will install the
+package on its next start. The global CLI is optional (you only need it for the
+manual `paste`/`get` flow; in clipboard mode copying the reply is enough).
+
+> **Install source:** the package is installed from this GitHub repository.
+> If it is later published to npm, you can simply use
+> `"npm": "opencode-human-relay"` instead of the GitHub reference below.
 
 ### 1. Register the provider
 
@@ -77,7 +82,7 @@ project `opencode.json`):
   "$schema": "https://opencode.ai/config.json",
   "provider": {
     "human-relay": {
-      "npm": "opencode-human-relay",
+      "npm": "github:debarch777/opencode-human-relay",
       "name": "Human Relay (copy/paste)",
       "models": {
         "human-relay": { "name": "Human Relay" }
@@ -96,18 +101,13 @@ project `opencode.json`):
 
 Restart opencode (or run `/models` in the TUI) and select **Human Relay**.
 
-opencode auto-installs the `opencode-human-relay` package into its runtime on
-the next start — no manual `npm install` inside opencode.
+opencode auto-installs the package into its runtime on the next start — no
+manual `npm install` inside opencode.
 
 ### 3. (Optional) Install the CLI globally
 
-Only needed for manual mode, scripting, or debugging:
-
-```bash
-npm install -g opencode-human-relay
-```
-
-You can also install directly from GitHub:
+Only needed for manual mode, scripting, or debugging. Install straight from
+GitHub:
 
 ```bash
 npm install -g github:debarch777/opencode-human-relay

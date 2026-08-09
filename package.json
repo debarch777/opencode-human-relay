@@ -3,6 +3,28 @@
   "version": "0.1.0",
   "description": "Human-in-the-loop LLM provider for opencode: route prompts through ChatGPT, Claude, or any web AI by copy-paste, with native tool-call support.",
   "license": "MIT",
+  "author": "debarch777",
+  "homepage": "https://github.com/debarch777/opencode-human-relay#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/debarch777/opencode-human-relay.git"
+  },
+  "bugs": {
+    "url": "https://github.com/debarch777/opencode-human-relay/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "opencode",
+    "provider",
+    "human-in-the-loop",
+    "copy-paste",
+    "chatgpt",
+    "claude",
+    "chatbot",
+    "llm"
+  ],
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -34,15 +56,6 @@
     "prepublishOnly": "npm run typecheck && npm run test && npm run build",
     "prepare": "npm run build"
   },
-  "keywords": [
-    "opencode",
-    "provider",
-    "human-in-the-loop",
-    "copy-paste",
-    "chatgpt",
-    "claude",
-    "web-novel"
-  ],
   "peerDependencies": {
     "@ai-sdk/provider": ">=3.0.8 <4"
   },

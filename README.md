@@ -1,11 +1,28 @@
 # opencode-human-relay
 
+[![npm version](https://img.shields.io/npm/v/opencode-human-relay?logo=npm)](https://www.npmjs.com/package/opencode-human-relay)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
+[![CI](https://img.shields.io/github/actions/workflow/status/debarch777/opencode-human-relay/ci.yml?branch=main&logo=github)](https://github.com/debarch777/opencode-human-relay/actions)
+
 Human-in-the-loop LLM provider for [opencode](https://opencode.ai). Use ChatGPT,
 Claude, Gemini, DeepSeek — any web AI with a copy button — as your coding
 backend. opencode keeps full agentic power: file editing, bash, MCP tools,
 permission prompts, git, and memory.
 
 Inspired by [Roo Code's Human Relay mode](https://github.com/RooVetGit/Roo-Code/issues/1267).
+
+## Requirements
+
+- **Node.js ≥ 18** (Node 20, 22, and 24 are tested in CI)
+- **opencode ≥ 1.17** ([install](https://opencode.ai/docs/))
+- **A web AI with a copy button** — ChatGPT, Claude, Gemini, DeepSeek, ...
+- Clipboard support for the auto-paste flow:
+  - Linux/Wayland: `wl-clipboard` (`wl-paste` / `wl-copy`)
+  - Linux/X11: `xclip` or `xsel`
+  - macOS: built-in `pbpaste` / `pbcopy`
+  - Windows: built-in PowerShell clipboard
+  - No clipboard tool? Use [manual mode](#manual-mode-no-clipboard--headless).
 
 ## How it works
 
@@ -45,11 +62,12 @@ edit code, and use your MCP servers, exactly like a native API model.
 
 ## Install
 
-Install the CLI (optional but recommended) and register the provider:
+The provider installs itself through opencode — you don't manage anything
+inside opencode. Just register it in your config and opencode will auto-install
+the npm package on its next start. The global CLI is optional (you only need it
+for the manual `paste`/`get` flow; in clipboard mode copying the reply is enough).
 
-```bash
-npm install -g opencode-human-relay
-```
+### 1. Register the provider
 
 Add to your `opencode.json` (global at `~/.config/opencode/opencode.json`, or a
 project `opencode.json`):
@@ -74,12 +92,41 @@ project `opencode.json`):
 }
 ```
 
-Then restart opencode and pick the **Human Relay** model with `/models`.
+### 2. Pick the model
 
-opencode auto-installs the `opencode-human-relay` npm package into its runtime
-on the next start. You do not need to run `npm install` inside opencode.
+Restart opencode (or run `/models` in the TUI) and select **Human Relay**.
+
+opencode auto-installs the `opencode-human-relay` package into its runtime on
+the next start — no manual `npm install` inside opencode.
+
+### 3. (Optional) Install the CLI globally
+
+Only needed for manual mode, scripting, or debugging:
+
+```bash
+npm install -g opencode-human-relay
+```
+
+You can also install directly from GitHub:
+
+```bash
+npm install -g github:debarch777/opencode-human-relay
+```
+
+Verify it works:
+
+```bash
+opencode-human-relay --help
+```
+
+> **Tip:** if you built the CLI from a local checkout, link it instead:
+> `npm install -g /path/to/opencode-human-relay`.
 
 ## Usage
+
+**Quick start:** ask opencode something → prompt is copied to your clipboard →
+paste it into your web AI → click **Copy** on the reply → it is detected
+automatically within ~1.5s and fed back to opencode. Repeat for every step.
 
 1. Start opencode with the Human Relay model selected and ask it something.
 2. The prompt is copied to your clipboard automatically (clipboard mode).
@@ -233,6 +280,37 @@ over the network by this package — you copy/paste manually.
   local file bytes, but it can read them through the `read` tool.
 - The web model must follow the tool-block format for tool calls to work; very
   stubborn models degrade to plain-text answers, which opencode still handles.
+
+## Troubleshooting
+
+**Nothing happens when I copy the reply.** Check `opencode-human-relay status`
+to see the pending request and the bridge. If the bridge is unreachable, the
+opencode session that owns the relay is not running — start it first. In
+clipboard mode the copy must land on the **same** machine/desktop session that
+runs opencode (SSH or a different Wayland/X11 seat won't share the clipboard).
+
+**The prompt isn't copied automatically.** You're probably on a system without a
+detected clipboard tool, or `relay.autoCopy` is `false`. Run
+`opencode-human-relay get` to print the prompt manually, or switch to
+[manual mode](#manual-mode-no-clipboard--headless).
+
+**The web AI answers with plain text and no tool call.** Some models are
+reluctant to emit the `<opencode:tool>` block. Re-read the "How tool calls
+survive copy/paste" section and mention the format to the model, or try a
+different web AI.
+
+**Repeated short answers like "hi" get ignored.** A reply that is identical to
+the last accepted one is only accepted when the clipboard actually changed
+(a fresh copy). Make a fresh copy (select + copy again) — it will be accepted.
+
+**The session title says "New session".** Background title-generation calls are
+skipped on purpose so they never consume your real reply. The title is cosmetic
+and can be renamed.
+
+**Multi-step agent runs need many paste rounds.** That's expected. In
+`conversation` mode each paste is a short delta — make sure you paste into the
+**same** web chat. To see full context every time, set
+`relay.promptMode: "full"`.
 
 ## Development
 

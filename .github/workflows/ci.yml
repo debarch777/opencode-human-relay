@@ -29,6 +29,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,10 +40,10 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Publish to npm
-        if: ${{ secrets.NPM_TOKEN != '' }}
+        if: ${{ env.NPM_TOKEN != '' }}
         run: npm publish --provenance --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publishing is skipped — add an NPM_TOKEN secret
-        if: ${{ secrets.NPM_TOKEN == '' }}
-        run: echo "No NPM_TOKEN secret set — skipping npm publish. Add one in Settings > Secrets > Actions to auto-publish on tagged releases."
+          NODE_AUTH_TOKEN: ${{ env.NPM_TOKEN }}
+      - name: Publishing is skipped (no NPM_TOKEN secret)
+        if: ${{ env.NPM_TOKEN == '' }}
+        run: echo "No NPM_TOKEN secret set - skipping npm publish. Add one in Settings > Secrets and variables > Actions to auto-publish on tagged releases."
